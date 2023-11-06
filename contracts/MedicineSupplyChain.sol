@@ -396,7 +396,7 @@ contract MedicineSupplyChain is ReentrancyGuard , AccessControl {
         //    //medName=>lotNumber=>addressOfRequestor=>addressOfReturnee=>quantityofReturn=>Status
         require(
             returnMedStatus[_name][_lotNumber][_distributor][owner][_quantity], 
-            "No Return Request Found"
+            "Return Request Not Found"
         );
 
         Medicine storage med = medicines[_name][_lotNumber];
