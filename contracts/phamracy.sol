@@ -10,24 +10,20 @@ contract Pharmacy {
         supplyChain = MedicineSupplyChain(_supplyChainAddress);
     }
 
-    function purchaseTokens(
-        uint _amount
-        ) public payable {
+    function purchaseTokens(uint _amount) public payable {
         require(
             msg.value ==_amount && _amount != 0,
             "Purchase Amount not Correct"
-            );
+        );
 
         supplyChain.purchaseTokens{value: msg.value}(_amount);
     }
 
-    function sellTokens(
-        uint _amount
-        ) public {
+    function sellTokens(uint _amount) public {
         require(
             _amount > 0,
             "Sell Token Amount not Correct"
-            );
+        );
 
         supplyChain.withDraw(_amount);
     }
@@ -38,7 +34,7 @@ contract Pharmacy {
         uint256 _lotNumber,
         uint256 _quantity,
         address _distributor
-    ) public {
+        ) public {
         require(
             _quantity > 0,
             "Invalid Purhase Quantity by Pharmacy"
@@ -58,7 +54,8 @@ contract Pharmacy {
         uint256 _lotNumber,
         uint256 _quantity,
         address _distributor
-    ) public {
+        ) public {
+
         require(
             _quantity > 0, 
             "Invalid Return Quantity"
@@ -69,7 +66,7 @@ contract Pharmacy {
             _lotNumber, 
             _quantity, 
             _distributor
-            );
+        );
     }
 
     function acceptReturn (
@@ -77,7 +74,8 @@ contract Pharmacy {
         uint256 _lotNumber,
         uint256 _quantity, 
         address _consumer
-    ) public {
+        ) public {
+
         require(
             _quantity > 0,
             "Invalid Return Quantity"
@@ -93,7 +91,7 @@ contract Pharmacy {
             _lotNumber, 
             _quantity, 
             _consumer
-            );  
+        );  
 
     }
  
