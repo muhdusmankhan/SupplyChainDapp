@@ -10,24 +10,22 @@ contract Consumer {
         supplyChain = MedicineSupplyChain(_supplyChainAddress);
     }
 
-    function purchaseTokens(
-        uint _amount
-        ) public payable {
+    function purchaseTokens(uint _amount) public payable {
+        
         require(
             msg.value ==_amount && _amount != 0,
             "Purchase Amount not Correct"
-            );
+        );
 
         supplyChain.purchaseTokens{value: msg.value}(_amount);
     }
 
-    function sellTokens(
-        uint _amount
-        ) public {
+    function sellTokens(uint _amount) public {
         require(
             _amount > 0,
             "Sell Token Amount not Correct"
             );
+
         supplyChain.withDraw(_amount);
     }
 
@@ -41,7 +39,7 @@ contract Consumer {
             _name,
             _lotNumber,
             _pharmacy
-            );
+        );
     }
 
     //Purchase Medicine from Pharmacy
@@ -50,7 +48,8 @@ contract Consumer {
         uint256 _lotNumber,
         uint256 _quantity,
         address _pharmacy
-    ) public {
+        ) public {
+        
         require(
             _quantity > 0, 
             "Invalid Purchase Quantity"
@@ -61,7 +60,7 @@ contract Consumer {
             _lotNumber,
             _quantity,
             _pharmacy
-            );
+        );
     }
 
     //sendReturnRequest to Pharmacy by Consumer
@@ -70,7 +69,7 @@ contract Consumer {
         uint256 _lotNumber,
         uint256 _quantity, 
         address _pharmacy
-    ) public {
+        ) public {
         require(
             _quantity > 0, 
             "Invalid Return Quantity"
@@ -86,10 +85,6 @@ contract Consumer {
             _lotNumber, 
             _quantity, 
             _pharmacy
-            );
+        );
     }
-    //No Need here because Approval will be done at time of purchase for the exact amount of tokens
-    // function approveContract(uint256 _amount) public {
-    //     supplyChain.approveContract(_amount);
-    // }
 }
