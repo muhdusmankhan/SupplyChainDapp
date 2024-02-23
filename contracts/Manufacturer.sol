@@ -13,10 +13,11 @@ contract Manufacturer {
     }
 
     function mintTokens(uint _amount)  public {
+        
         require(
             _amount>0, 
-            "INvalid Token Amount"
-            );
+            "INvalid Amount"
+        );
             
         supplyChain.mintTokens(_amount);
     }
@@ -28,7 +29,7 @@ contract Manufacturer {
         uint256 _quantity,
         uint256 _price,
         uint256 _dateOfProduction,
-        uint256 _dateofExpiry ) public {
+        uint256 _dateofExpiry) public {
 
         supplyChain.addMedicine(
             _name, 
@@ -41,12 +42,13 @@ contract Manufacturer {
         );
     }
 
-      function destroyMed(
+    function destroyMed(
         string memory _name,
         uint256 _lotNumber,
         uint256 _quantity
         )  public {
-       supplyChain.destroyMedicine(_name, _lotNumber, _quantity);
+
+        supplyChain.destroyMedicine(_name, _lotNumber, _quantity);
     }
 
     function acceptReturn (
@@ -54,7 +56,8 @@ contract Manufacturer {
         uint256 _lotNumber,
         uint256 _quantity, 
         address _distributor
-    ) public {
+        ) public {
+
         require(
             _quantity > 0,
             "Invalid Return Quantity"
@@ -65,17 +68,16 @@ contract Manufacturer {
             "Invalid Return Consumer Address"
         );
 
-          supplyChain.returnMedicinebyManufacturer(
+        supplyChain.returnMedicinebyManufacturer(
             _name, 
             _lotNumber, 
             _quantity, 
             _distributor
-            );  
+        );  
 
     }
 
-
-     function addValidDistributor(address _address) public {
+    function addValidDistributor(address _address) public {
         supplyChain.addValidDistributor(_address);
     }
 }
