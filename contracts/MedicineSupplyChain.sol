@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.21;
+
+/// @author  Mr. Muhammad Usman Khan, Mr. Syed Awais, Ms Uswa, Mr. Imran, Mr Faisal
+/// @title (Medicince Supply Chain) - Medicine Sales and Counterfeit Medicine Verification System - Final Project for Blockchain BootCamp by MOIT
+
 import "./MedicineToken.sol";
-import "hardhat/console.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "./ReentrancyGuard.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/release-v4.3/contracts/security/ReentrancyGuard.sol";
 
 contract MedicineSupplyChain is ReentrancyGuard , AccessControl {
+    
     address public owner;
-    // Linking ERC20 token
-    MedicineToken public tokenContract;
     address immutable tokenCOntractAddress;
-    // Define roles
+    uint256 minimumLotQuantity = 1000;
+    MedicineToken private tokenContract;
+    
+     //Roles - for Access Control
+    bytes32 private constant Manufacturer = keccak256("Manufacturer");
+    bytes32 private constant Distributor = keccak256("Distributor");
+    bytes32 private constant Pharmacy = keccak256("Pharmacy");
 
     //Medicine Category
     enum Category {
@@ -19,6 +27,20 @@ contract MedicineSupplyChain is ReentrancyGuard , AccessControl {
         Herbal,
         LifeSaving
     }
+    
+    // Define a mapping for medicines --- name => medicine -- Updated
+    mapping(string => mapping(uint256 => Medicine)) medicines;
+    //mapping for return requests
+    mapping (string => mapping(uint256 => mapping (address => mapping (address => mapping (uint256 => bool))))) returnMedStatus; 
+    //medName=>lotNumber=>addressOfRequestor=>addressOfReturnee=>quantityofReturn=>Status
+    
+    //this mapping struct will be needed for purchase and return medicines function
+    struct mapQuantity {
+        mapping(address => MedQuantity) distributorQuantity;
+        mapping(address => MedQuantity) PharmacyQuantity;
+        mapping(address => uint256) consumerQuantity;
+    }
+    
     // Define a struct for a Medicine
     struct Medicine {
         Category cat; 
@@ -34,121 +56,22 @@ contract MedicineSupplyChain is ReentrancyGuard , AccessControl {
         mapQuantity qty; // to maintain medicine qty for dist, pharmacy and consumer
     }
     //added structure to be used in mapQuantity
-    struct medQuantity {
+    struct MedQuantity {
         uint256 medPurchased;
         uint256 medSold;
     }
-
-    //this mapping will be needed for purchase and return medicines function
-    struct mapQuantity {
-        mapping(address => medQuantity) distributorQuantity;
-        mapping(address => medQuantity) PharmacyQuantity;
-        mapping(address => uint256) consumerQuantity;
-    }
-
-    // Define a mapping for medicines --- name => medicine -- Updated
-    mapping(string => mapping(uint256 => Medicine)) medicines;
-
-    //mapping for return requests
-    mapping (string => mapping(uint256 =>mapping (address => mapping (address => mapping (uint256 => bool))))) returnMedStatus; 
-    //medName=>lotNumber=>addressOfRequestor=>addressOfReturnee=>quantityofReturn=>Status
     
     // Define events for actions
-    event MedicineAdded(
-        uint256 lotNumber,
-        string name,
-        uint256 quantity,
-        uint256 price
-    );
-    event MedicinePurchased(
-        uint256 lotNumber,
-        uint256 quantity,
-        uint256 totalPrice
-    );
-
-    event MedicineReturned(uint256 lotNumber, uint256 quantity);
-    event MedicineVerified(uint256 lotNumber, string message);
-    event DistributorAdded(address distributor);
-    event PharmacyAdded(address pharmacy);
-    event MedicineDestroyed(uint256 lotNumber, uint256 quantity);
     
-    //Roles - for Access Control
-    bytes32 public constant Manufacturer = keccak256("Manufacturer");
-    bytes32 public constant Distributor = keccak256("Distributor");
-    bytes32 public constant Pharmacy = keccak256("Pharmacy");
-
-
-    uint256 minimumLotQuantity = 1000;
-    // Constructor
-    constructor(address _tokenAddress) {
-        owner = msg.sender;
-        _grantRole(Manufacturer, owner);
-        tokenCOntractAddress = _tokenAddress;  
-        // Initialize the token, adjust the parameters as needed
-        tokenContract =  MedicineToken(_tokenAddress);
-    }
-
-    // Function to mint tokens (only manufacturer can do this)
-    function mintTokens(uint256 _amount)
-        public 
-        onlyManufacturer() {
-            uint _approveAmount = _amount + tokenContract.getBalance();
-            tokenContract.approve(_approveAmount);
-            tokenContract.mint(owner, _amount);
-    }
-
-    // Function to purchase tokens (pays in wei) 
-    //Anyone can buy tokens - eth will be tranferred to contract
-    function purchaseTokens(uint256 _amount) public payable {
-        require(
-            msg.value == _amount && _amount != 0, 
-            "Incorrect payment amount"
-        );
-
-        require(
-            tx.origin != owner,
-            "Owner cannot purchase tokens he already owns"
-        );
-        // Transfer tokens from manufacturer to distributor
-        tokenContract.transferFrom(owner, tx.origin, _amount);
-    }
-
-    //this functions enables distributor, pharmacy and consumer to sell their tokens to owner
-    //the eth will be held in contract which will be transferred to called
-    //the token selling amount will be transfered to owner
-    function withDraw (uint256 _amount) external nonReentrant {
-        require(
-            tx.origin != owner, 
-            "Owner Cannot withdraw funds from Contract"
-        );
-
-        require(
-            msg.sender != address(this), 
-            "Cannot transfer Ether to the contract itself"
-        );
-
-        require(
-            address(this).balance >= _amount, 
-            "Insufficient Funds in Contract"
-        );
-
-        require(
-            _amount != 0, 
-            "Invalid withdrawl Amount"
-        );
-
-        require(
-            tokenContract.balanceOf(tx.origin) >= _amount,
-            "Not enough tokens to Sell"
-        );
-
-        // Transfer tokens from manufacturer to distributor
-        tokenContract.approve(_amount);
-        tokenContract.transferFrom(tx.origin, owner, _amount); // transfer tokens to owner i.e. Manufacturer
-        payable(tx.origin).transfer(_amount); //pay ether to caller address from contract
-        tokenContract.approve(0);
-    }
-
+    event PharmacyAdded(address pharmacy);
+    event DistributorAdded(address distributor);
+    event MedicineVerified(uint256 lotNumber, string message);
+    event MedicineReturned(uint256 lotNumber, uint256 quantity);
+    event MedicineDestroyed(uint256 lotNumber, uint256 quantity);
+    event MedicinePurchased(uint256 lotNumber, uint256 quantity, uint256 totalPrice);
+    event MedicineAdded(uint256 lotNumber, string name, uint256 quantity, uint256 price);
+    
+    
     // Modifier to check role
     modifier onlyManufacturer() {
         require(
@@ -175,13 +98,98 @@ contract MedicineSupplyChain is ReentrancyGuard , AccessControl {
     modifier onlyConsumer() {
         require(!
             hasRole(Pharmacy, tx.origin) && !hasRole(Distributor, tx.origin) && !hasRole(Manufacturer,tx.origin), 
-            "Only Consumer can buy Medicine From Pharmacy"
+            "Restricted to Consumer"
         );
         _;
     }
 
-    // Add medicine
-    //date of production and expiry will be sent in seconds from frontEnd
+    /// Store _tokenAddress and owner address to state variables at deployment
+    /// @param _tokenAddress of token contract
+    /// @dev _tokenAddress is address to token contract and the address used to deploy the contract is the owner of this contract
+
+    constructor(address _tokenAddress) {
+        owner = msg.sender;
+        _grantRole(Manufacturer, owner);
+        tokenCOntractAddress = _tokenAddress;  
+        // Initialize the token, adjust the parameters as needed
+        tokenContract =  MedicineToken(_tokenAddress);
+    }
+
+    
+    /// Stores / Update minted token _amount to manufacturer balance.
+    /// @param _amount of tokens to be minted
+    /// @dev update the amount of token balance of manufacturer 
+
+    function mintTokens(uint256 _amount) external onlyManufacturer() {
+        unchecked {
+            uint _approveAmount = _amount + tokenContract.getBalance(); 
+            tokenContract.approve(_approveAmount); 
+        }
+
+        tokenContract.mint(owner, _amount);
+    }
+
+    /// Transfers _amount to caller/purchaser from manufacturer.
+    /// @param _amount of tokens to be transferred 
+    /// @dev update token balances of manufacturer and purchaser/caller. Transfers equivalent eth to contract
+
+    function purchaseTokens(uint256 _amount) external nonReentrant payable {
+        require(
+            msg.value == _amount && _amount != 0, 
+            "Invalid Amount"
+        );
+
+        require(
+            tx.origin != owner,
+            "Invalid Caller"
+        );
+        // Transfer tokens from manufacturer to distributor
+        tokenContract.transferFrom(owner, tx.origin, _amount);
+    }
+
+    
+    /// Transfers token _amount from caller/seller to manufacturer.
+    /// @param _amount of tokens to be transferred 
+    /// @dev update token balances of manufacturer and purchaser/caller and transfer equivalent eth to caller/seller from contract
+
+    function withDraw (uint256 _amount) external nonReentrant {
+        require(
+            tx.origin != owner, 
+            "Invalid Caller"
+        );
+
+        require(
+            msg.sender != address(this), 
+            "Invalid Caller"
+        );
+
+        require(
+            address(this).balance >= _amount, 
+            "Insufficient Funds"
+        );
+
+        require(
+            _amount != 0, 
+            "Invalid Amount"
+        );
+
+        require(
+            tokenContract.balanceOf(tx.origin) >= _amount,
+            "Insufficient Funds"
+        );
+
+        // Transfer tokens from manufacturer to distributor
+        tokenContract.approve(_amount);
+        tokenContract.transferFrom(tx.origin, owner, _amount); // transfer tokens to owner i.e. Manufacturer
+        payable(tx.origin).transfer(_amount); //pay ether to caller address from contract
+        tokenContract.approve(0);
+    }
+
+    
+    /// Store manufactured medicine lot in Medicine Struct and State Variables
+    /// @param _name, _lotNumber,_cat, _quantity, _price, _dateOfProduction, _dateofExpiry for manufacturer lot to be added
+    /// @dev adds new lot of medicine by Maufacturer
+    
     function addMedicine(
         string memory _name,
         uint256 _lotNumber,
@@ -190,34 +198,44 @@ contract MedicineSupplyChain is ReentrancyGuard , AccessControl {
         uint256 _price,
         uint256 _dateOfProduction,
         uint256 _dateofExpiry
-    ) public onlyManufacturer() {
+        ) external onlyManufacturer() {
 
         //add check if this lot is not already added
-         Medicine storage med = medicines[_name][_lotNumber];
+        Medicine storage med = medicines[_name][_lotNumber];
         require(
-            _dateofExpiry >= _dateOfProduction && _price > 0,
-            "Invalid Expiry/Production Date or Unit Price of Medicine"
+            _dateofExpiry >= _dateOfProduction,
+            "Invalid Med Details"
+        );
+
+        require(
+            _price > 0,
+            "Invalid Med Details"
         );
 
         require(
             _quantity >= minimumLotQuantity,
-            "Medicine Quanity for Lot Not Valid / Minimum is 1000"
+            "Invalid Quanity"
         );
 
         require(
             med.quantity == 0,
-            "Lot Already Added"
+            "Duplicate Request"
         );
 
         Category c;
-        if (_cat==0)
+        
+        if (_cat==0) {
             c = Category.OffTheCounter;
-        else if(_cat==1)
+        }
+        else if(_cat==1){
             c = Category.PrescriptionOnly;
-        else if(_cat==2)
+        }
+        else if(_cat==2){
             c = Category.Herbal;
-        else if(_cat==3)
+        }
+        else if(_cat==3) {
             c = Category.LifeSaving;
+        }
         
         medicines[_name][_lotNumber].cat = c;
         medicines[_name][_lotNumber].quantity = _quantity;
@@ -229,25 +247,30 @@ contract MedicineSupplyChain is ReentrancyGuard , AccessControl {
         medicines[_name][_lotNumber].price = _price;
         medicines[_name][_lotNumber].dateOfProduction = _dateOfProduction;
         medicines[_name][_lotNumber].dateOfExpiry = _dateofExpiry;
-        emit MedicineAdded(_lotNumber, _name, _quantity, _price);
+        emit MedicineAdded(_lotNumber, _name, _quantity, _price); 
     }
 
-    // Destroy medicine only Manufacturer can call
-    //this can be called in case of returned meds which are expired
+
+    /// Updates destroyed quantities of medicine lot in Medicine Struct and State Variables
+    /// @param _name, _lotNumber, _quantity of medicine to be destoryed
+    /// @dev update respective lot of medicine by Maufacturer in case provided medicine quantity is destroyed due to expiry or bad lot
+    
     function destroyMedicine(
         string memory _name,
         uint256 _lotNumber,
         uint256 _quantity
-    ) public onlyManufacturer() {
+        ) external onlyManufacturer() {
         
         require (
             _quantity != 0,
-            "Invalid Quantity to Destroy"
+            "Invalid Quantity"
         );
+
         Medicine storage med = medicines[_name][_lotNumber];
+
         require(
             med.quantity - (med.cirSupply + med.totalSoldQty) >= _quantity,
-            "Not enough quantity to destroy"
+            "Invalid Quantity"
         ); //updated
 
         med.quantity -= _quantity;
@@ -255,357 +278,431 @@ contract MedicineSupplyChain is ReentrancyGuard , AccessControl {
     }
     
 
-    // Distributor Purchase medicine from Manufacturer 
-    //Assumption Distributor purchase whole lot from manufacturer
-    function purchaseMedicineLot(
+    /// Updates and Store purchased medicine lot in Medicine Struct and State Variables by distributer
+    /// @param _name, _lotNumber of lot to be purchased
+    /// @dev Distributor will puchase complete lot of specified medicine. Transfers equivalent tokens to owner
+
+    function purchaseMedicineLot (
         string memory _name,
         uint256 _lotNumber
-    ) public  onlyDistributor() {
+        ) external nonReentrant onlyDistributor() {
+
         Medicine storage med = medicines[_name][_lotNumber];
+        
         require(
             med.quantity != med.cirSupply,
-            "Medicine not available in mentioned Lot"
+            "Invalid Medicine"
         );
-
-        //FRONTEND check if lot number and med exists
-        uint256 totalPrice = med.price * med.quantity;
-        medicines[_name][_lotNumber].cirSuply=true;
-        med.cirSupply += med.quantity;
-        med.totalDistQty = med.quantity; //conmulative sum of qty purchased by all distributors
-        med.qty.distributorQuantity[tx.origin].medPurchased =med.quantity; //update distributor quantity
-        //distributor has to approve contract first to transfer to owner
-        tokenContract.approve(totalPrice);
-        tokenContract.transferFrom(tx.origin, owner, totalPrice);// Transfer tokens to Manufacturer
-        tokenContract.approve(0);
-        emit MedicinePurchased(_lotNumber, med.quantity, totalPrice);
+        
+        unchecked {
+            //FRONTEND check if lot number and med exists
+            uint256 totalPrice = med.price * med.quantity;
+            medicines[_name][_lotNumber].cirSuply=true;
+            med.cirSupply += med.quantity;
+            med.totalDistQty = med.quantity; //conmulative sum of qty purchased by all distributors
+            med.qty.distributorQuantity[tx.origin].medPurchased =med.quantity; //update distributor quantity
+            //distributor has to approve contract first to transfer to owner
+            tokenContract.approve(totalPrice);
+            tokenContract.transferFrom(tx.origin, owner, totalPrice);// Transfer tokens to Manufacturer
+            tokenContract.approve(0);
+            emit MedicinePurchased(_lotNumber, med.quantity, totalPrice);
+        }
     }
 
-    // Pharmacy Purchase medicine from distributor
+    
+    /// Stores and update purchased medicine quantity in Medicine Struct and State Variables by Pharmacy
+    /// @param _name, _lotNumber, _quantity, _distributor  of medicine to be purchased
+    /// @dev Pharmacy will puchase selected quanitity of specified medicine. Transfers equivalent tokens to Distributor
+
     function purchaseFromDistributor(
         string memory _name,
         uint256 _lotNumber,
         uint256 _quantity,
         address _distributor
-    ) public onlyPharmacy() {
+        ) external nonReentrant onlyPharmacy() {
+        
         require(
             hasRole(Distributor,_distributor), 
-            "Invalid distributor"
+            "Invalid Address"
         );
+        
+        unchecked {
 
-        Medicine storage med = medicines[_name][_lotNumber];
-        uint256 DistQuantity = med.qty.distributorQuantity[_distributor].medPurchased-med.qty.distributorQuantity[_distributor].medSold;
-        require(
-             DistQuantity >= _quantity && _quantity != 0,
-            "Not enough quantity with Distributor / Invalid Quantity"
-        );
+            Medicine storage med = medicines[_name][_lotNumber];
+            uint256 DistQuantity = med.qty.distributorQuantity[_distributor].medPurchased-med.qty.distributorQuantity[_distributor].medSold;
+            require(
+                DistQuantity >= _quantity && _quantity != 0,
+                "Invalid Quantity"
+            );
 
-        uint256 totalPrice = med.price * _quantity;
-        med.qty.distributorQuantity[_distributor].medSold += _quantity;
-        med.qty.PharmacyQuantity[tx.origin].medPurchased += _quantity; //update distributor quantity
-        med.totalPharmQty += _quantity;
-        med.totalDistQty -= _quantity;
-        tokenContract.approve(totalPrice);
-        tokenContract.transferFrom(tx.origin, _distributor, totalPrice); // Transfer tokens to distributer
-        tokenContract.approve(0);
-        emit MedicinePurchased(_lotNumber, _quantity, totalPrice);
+            uint256 totalPrice = med.price * _quantity;
+            med.qty.distributorQuantity[_distributor].medSold += _quantity;
+            med.qty.PharmacyQuantity[tx.origin].medPurchased += _quantity; //update distributor quantity
+            med.totalPharmQty += _quantity;
+            med.totalDistQty -= _quantity;
+            tokenContract.approve(totalPrice);
+            tokenContract.transferFrom(tx.origin, _distributor, totalPrice); // Transfer tokens to distributer
+            tokenContract.approve(0);
+            emit MedicinePurchased(_lotNumber, _quantity, totalPrice);
+        }
     }
 
-    // Customer Purchase medicine from pharmacy using tokens
+    /// Stores and update purchased medicine quantity in Medicine Struct and State Variables by Consumer
+    /// @param _name, _lotNumber, _quantity, _pharmacy  of medicine to be purchased
+    /// @dev Consumer will puchase selected quanitity of specified medicine. Transfers equivalent tokens to Pharmacy
+
     function purchaseFromPharmacy(
         string memory _name,
         uint256 _lotNumber,
         uint256 _quantity,
         address _pharmacy
-    )  external onlyConsumer() {
+        )  external nonReentrant onlyConsumer() {
+
         require(
             hasRole(Pharmacy, _pharmacy),
-            "Invalid pharmacy"
+            "Invalid Address"
         );
 
         Medicine storage med = medicines[_name][_lotNumber];
         require(
             verifyMedicine(_name,_lotNumber,_pharmacy),
-            "Medicine not Verifed"
+            "Invalid Medicine"
         );
 
-        uint256 PharmQuantity = med.qty.PharmacyQuantity[_pharmacy].medPurchased - med.qty.PharmacyQuantity[_pharmacy].medSold;
-        require(
-              PharmQuantity >= _quantity && _quantity != 0,
-            "Not enough quantity to purchase from Pharmacy / Invalid Quantity"
-        );
+        unchecked {
+            uint256 PharmQuantity = med.qty.PharmacyQuantity[_pharmacy].medPurchased - med.qty.PharmacyQuantity[_pharmacy].medSold;
+            require(
+                PharmQuantity >= _quantity && _quantity != 0,
+                "Invalid Quantity"
+            );
 
-        uint256 totalPrice = med.price * _quantity;
-        med.cirSupply -= _quantity; // updated
-        med.qty.PharmacyQuantity[_pharmacy].medSold += _quantity; //update pharmacy quantity
-        med.qty.consumerQuantity[tx.origin] += _quantity; //Update consumer quantity - can be used for returns
-        med.totalSoldQty += _quantity;
-        med.totalPharmQty -= _quantity;
-        //Transfer will be called but we might face issue here
-        //if tranferFrom is called then we need to authorize contract first to trnasfer the token on msg.sender behalf
-        tokenContract.approve(totalPrice);
-        tokenContract.transferFrom(tx.origin, _pharmacy, totalPrice); // Transfer tokens from customer to pharmacy
-        tokenContract.approve(0);
-        emit MedicinePurchased(_lotNumber, _quantity, totalPrice);
-    }
-
-    // LOT EXPIRE CHECK, LOT AVAILABILITY CHECK
-    //Verify medicine
-    function verifyMedicine(
-        string memory _name,
-        uint256 _lotNumber,
-        address _pharmacy
-    ) public returns (bool) {
-        Medicine storage med = medicines[_name][_lotNumber];
-        bool check = true;
-        string memory mesg = "Not Verified";
-        if (med.dateOfExpiry >= block.timestamp) {
-            mesg = "Medicine in this Lot are Expired";
-            check = false;
+            uint256 totalPrice = med.price * _quantity;
+            med.cirSupply -= _quantity; // updated
+            med.qty.PharmacyQuantity[_pharmacy].medSold += _quantity; //update pharmacy quantity
+            med.qty.consumerQuantity[tx.origin] += _quantity; //Update consumer quantity - can be used for returns
+            med.totalSoldQty += _quantity;
+            med.totalPharmQty -= _quantity;
+            //Transfer will be called but we might face issue here
+            //if tranferFrom is called then we need to authorize contract first to trnasfer the token on msg.sender behalf
+            tokenContract.approve(totalPrice);
+            tokenContract.transferFrom(tx.origin, _pharmacy, totalPrice); // Transfer tokens from customer to pharmacy
+            tokenContract.approve(0);
+            emit MedicinePurchased(_lotNumber, _quantity, totalPrice);
         }
-        else if(medicines[_name][_lotNumber].cirSuply == false){
-            mesg = "Medicine in this Lot is not in Circulation Yet";//not purchased by distributor
-            check = false;
-        }
-        else if (med.cirSupply == 0) {
-            mesg = "Medicine in this Lot in no Longer in Circulating Supply";//sold all to consumers
-            check = false;
-        }
-        else if (med.qty.PharmacyQuantity[_pharmacy].medPurchased - med.qty.PharmacyQuantity[_pharmacy].medSold == 0) {
-            mesg = "Medicine Stock not available at Mentioned Pharmacy";
-            check = false;
-        }
-        emit MedicineVerified(_lotNumber, mesg);
-        return check;
     }
 
     
-    // Return medicine by Distributor
-    //Manufacturer can call this function after verification of returned  by distributor
+    /// Stores and  update retrned medicine quantity in Medicine Struct and State Variables by Distributor
+    /// @param _name, _lotNumber, _quantity, _distributor  of medicine to be returned
+    /// @dev Manufacturer can call this function after verification of returned by distributor. Transfers equivalent tokens to Distributor
+
     function returnMedicinebyManufacturer (
         string memory _name,
         uint256 _lotNumber,
         uint256 _quantity,
         address _distributor
-    ) public onlyManufacturer() {
+        ) external onlyManufacturer() {
 
         require(
             hasRole(Distributor, _distributor), 
             "Invalid Distributor"
         );
 
-        //    //medName=>lotNumber=>addressOfRequestor=>addressOfReturnee=>quantityofReturn=>Status
+        //medName=>lotNumber=>addressOfRequestor=>addressOfReturnee=>quantityofReturn=>Status
         require(
             returnMedStatus[_name][_lotNumber][_distributor][owner][_quantity], 
-            "Return Request Not Found"
+            "Invalid Request"
         );
 
-        Medicine storage med = medicines[_name][_lotNumber];
-        require(
-            med.qty.distributorQuantity[_distributor].medPurchased - med.qty.distributorQuantity[_distributor].medSold  >= _quantity,
-            "Return Quantity Not Valid"
-        );
+        unchecked {
 
-        uint totalPrice = _quantity * med.price;
-        
-        med.cirSupply += _quantity;
-        med.totalDistQty -= _quantity;
+            Medicine storage med = medicines[_name][_lotNumber];
+            require(
+                med.qty.distributorQuantity[_distributor].medPurchased - med.qty.distributorQuantity[_distributor].medSold  >= _quantity,
+                "Invalid Quantity"
+            );
 
-        med.qty.distributorQuantity[_distributor].medPurchased -= _quantity;
-        tokenContract.transferFrom(owner, _distributor, totalPrice);
-        delete returnMedStatus[_name][_lotNumber][_distributor][owner][_quantity];
-        emit MedicineReturned(_lotNumber, _quantity);
+            uint totalPrice = _quantity * med.price;
+            med.cirSupply += _quantity;
+            med.totalDistQty -= _quantity;
+            med.qty.distributorQuantity[_distributor].medPurchased -= _quantity;
+            tokenContract.transferFrom(owner, _distributor, totalPrice);
+            delete returnMedStatus[_name][_lotNumber][_distributor][owner][_quantity];
+            emit MedicineReturned(_lotNumber, _quantity);
+        }
     }
 
-    // Accept return by pharmacy 
-    //Only distributor can call this function after verification of returned medicine by pharmacy
+    /// Store and update retrned medicine quantity in Medicine Struct and State Variables by Pharmacy
+    /// @param _name, _lotNumber, _quantity, _pharmacy  of medicine to be returned
+    /// @dev Distributor can call this function after verification of returned by Pharmacy. Transfers equivalent tokens to Pharmacy
+
     function returnMedicinebyDistributor(
         string memory _name,
         uint256 _lotNumber,
         uint256 _quantity, 
         address _pharmacy
-    ) public  onlyDistributor() {
+        ) external onlyDistributor() {
+
         require(
             returnMedStatus[_name][_lotNumber][_pharmacy][tx.origin][_quantity], 
-            "No Return Request Found"
+            "Invalid Request"
         );
 
-        Medicine storage med = medicines[_name][_lotNumber];
-        uint256 totalQuantity = med.qty.PharmacyQuantity[_pharmacy].medPurchased - med.qty.PharmacyQuantity[_pharmacy].medSold;
-        require (
-            hasRole(Pharmacy,_pharmacy),
-            "Pharmacy Address not Valid"
-        );
+        unchecked {
 
-        require(
-            totalQuantity >= _quantity,
-            "Invalid Return Quantity / Not enough quantity to Return"
-        );
+            Medicine storage med = medicines[_name][_lotNumber];
+            uint256 totalQuantity = med.qty.PharmacyQuantity[_pharmacy].medPurchased - med.qty.PharmacyQuantity[_pharmacy].medSold;
+            require (
+                hasRole(Pharmacy,_pharmacy),
+                "Invalid Address"
+            );
+
+            require(
+                totalQuantity >= _quantity,
+                "Invalid Quantity"
+            );
+            
+            uint totalPrice = _quantity * med.price;
         
-        uint totalPrice = _quantity * med.price;
-      
-        med.qty.distributorQuantity[tx.origin].medPurchased += _quantity;
-        med.qty.distributorQuantity[tx.origin].medSold -= _quantity;
-        med.qty.PharmacyQuantity[_pharmacy].medPurchased -= _quantity;
+            med.qty.distributorQuantity[tx.origin].medPurchased += _quantity;
+            med.qty.distributorQuantity[tx.origin].medSold -= _quantity;
+            med.qty.PharmacyQuantity[_pharmacy].medPurchased -= _quantity;
 
-        med.totalDistQty += _quantity;
-        med.totalPharmQty -= _quantity;
-        delete returnMedStatus[_name][_lotNumber][_pharmacy][tx.origin][_quantity];
-        tokenContract.approve(totalPrice);
-        //there will be issue in transfer from here
-        tokenContract.transferFrom(tx.origin, _pharmacy, totalPrice);
-        tokenContract.approve(0);
-        
-        emit MedicineReturned(_lotNumber, _quantity);
+            med.totalDistQty += _quantity;
+            med.totalPharmQty -= _quantity;
+            delete returnMedStatus[_name][_lotNumber][_pharmacy][tx.origin][_quantity];
+            tokenContract.approve(totalPrice);
+            //there will be issue in transfer from here
+            tokenContract.transferFrom(tx.origin, _pharmacy, totalPrice);
+            tokenContract.approve(0);
+            
+            emit MedicineReturned(_lotNumber, _quantity);
+        }
     }
 
-    // Accept return by Consumer Pharmacy
-    //Only Pharmacy can call this function after verification of returned medicine by consumer
+    /// Store and update retrned medicine quantity in Medicine Struct and State Variables by consumer
+    /// @param _name, _lotNumber, _quantity, _consumer  of medicine to be returned
+    /// @dev Pharmacy can call this function after verification of returned by consumer. Transfers equivalent tokens to consumer
+
     function returnMedicinebyPharmacy(
         string memory _name,
         uint256 _lotNumber,
         uint256 _quantity, 
         address _consumer
-    ) public onlyPharmacy() {
+        ) public onlyPharmacy() {
 
-        require(
-            returnMedStatus[_name][_lotNumber][_consumer][tx.origin][_quantity], 
-            "No Return Request Found"
-        );
+        unchecked {
+            require(
+                returnMedStatus[_name][_lotNumber][_consumer][tx.origin][_quantity], 
+                "Invalid Request"
+            );
 
-        Medicine storage med = medicines[_name][_lotNumber];
-        require(
-            med.qty.consumerQuantity[_consumer] >= _quantity && _quantity != 0,
-            "Invalid Return Quantity by Consumer"
-        );
+            Medicine storage med = medicines[_name][_lotNumber];
+            require(
+                med.qty.consumerQuantity[_consumer] >= _quantity && _quantity != 0,
+                "Invalid Quantity"
+            );
 
-        require (
-            hasRole(Pharmacy,tx.origin),
-            "Pharmacy Address not Valid"
-        );
+            require (
+                hasRole(Pharmacy,tx.origin),
+                "Invalid Address"
+            );
+            
 
-        uint totalPrice = _quantity * med.price;
-        
-        med.qty.PharmacyQuantity[tx.origin].medPurchased += _quantity;
-        med.qty.PharmacyQuantity[tx.origin].medSold -= _quantity;
-        med.qty.consumerQuantity[_consumer] -= _quantity;
-        
-        med.totalPharmQty += _quantity;
-        med.totalSoldQty -= _quantity;
-        delete returnMedStatus[_name][_lotNumber][_consumer][tx.origin][_quantity];
-        tokenContract.approve(totalPrice);
-        //again transfer from issue here
-        tokenContract.transferFrom(tx.origin, _consumer, totalPrice);
-        tokenContract.approve(0);
-        
-        emit MedicineReturned(_lotNumber, _quantity);
+            uint totalPrice = _quantity * med.price;
+            
+            med.qty.PharmacyQuantity[tx.origin].medPurchased += _quantity;
+            med.qty.PharmacyQuantity[tx.origin].medSold -= _quantity;
+            med.qty.consumerQuantity[_consumer] -= _quantity;
+            
+            med.totalPharmQty += _quantity;
+            med.totalSoldQty -= _quantity;
+            delete returnMedStatus[_name][_lotNumber][_consumer][tx.origin][_quantity];
+            tokenContract.approve(totalPrice);
+            //again transfer from issue here
+            tokenContract.transferFrom(tx.origin, _consumer, totalPrice);
+            tokenContract.approve(0);
+            
+            emit MedicineReturned(_lotNumber, _quantity);
+        }
     }
     
-    // Add valid distributor
-    function addValidDistributor(address _distributor)
-        external
-        onlyManufacturer()
-    {
+    /// Store valid distributor's address to State Variables
+    /// @param _distributor  address to be added
+    /// @dev Manufacturer can call this function to add distrubutor
+
+    function addValidDistributor(address _distributor) external onlyManufacturer() {
+        
+        require(
+            hasRole(Distributor, _distributor), 
+            "Duplicate Request"
+        );
+
         require(
             _distributor != address(0),
-            "Distributor Address Invalid"
+            "Invalid Address"
         );
         _grantRole(Distributor, _distributor);
         emit DistributorAdded(_distributor);
     }
 
-    //         // Add valid pharmacy
-    function addValidPharmacy(address _pharmacy)
-        public
-        onlyDistributor()
-    {
+    /// Store valid pharmacy's address to State Variables
+    /// @param _pharmacy  address to be added
+    /// @dev Distributor can call this function to add pharmacy
+
+    function addValidPharmacy(address _pharmacy) external onlyDistributor() {
+
+        require(
+            hasRole(Pharmacy, _pharmacy), 
+            "Duplicate Request"
+        );
+
         require(
             _pharmacy != address(0),
-            "Pharmacy Address Invalid"
+            "Invalid Address"
         );
         _grantRole(Pharmacy, _pharmacy);
         emit PharmacyAdded(_pharmacy);
     }
+   
+    /// Updates returned medicine quantity request in Med Struct
+    /// @param _name, _lotNumber, _quantity, _retAddress  of medicine to be returned
+    /// @dev Anyone can call this function to submit return request to mentioned return address. Handles all the stake holders
+    
+    function sendReturnRequest(
+        string memory _name, 
+        uint256 _lotNumber, 
+        uint256 _quantity, 
+        address _retAddress
+        ) external {
 
-    // function approveContract(uint256 _amount) public {
-    //     tokenContract.approve(_amount);
-    // }
-    //Additional function to get stats of particular medicine quantity
-    //it will return meds quantity for whoever is calls this function
-    function getMedicineCount(string memory _name, uint256 _lotNumber) public view returns(uint256 qty) {
-        Medicine storage med = medicines[_name][_lotNumber];
-        uint256 quantity;
-        if(tx.origin == owner) {
-            quantity = med.quantity - med.totalDistQty;
-            return quantity;
-        }
-        else if(hasRole(Distributor, tx.origin)) {
-            quantity = med.qty.distributorQuantity[tx.origin].medPurchased - med.qty.distributorQuantity[tx.origin].medSold;
-           return quantity;
-        }
-        else if (hasRole(Pharmacy,tx.origin)) {
-            quantity = med.qty.PharmacyQuantity[tx.origin].medPurchased - med.qty.PharmacyQuantity[tx.origin].medSold;
-            return quantity;
-        }
-        else {
-            return med.qty.consumerQuantity[tx.origin];
-        }
-    }
+        unchecked {
+            Medicine storage med = medicines[_name][_lotNumber];
+            require(
+                tx.origin != owner,
+                "Invalid Caller"
+            );
+            //Cannot Add multiple Return Requests at one time  to same Party, Wait till previous is accepted
+            require(
+                !(returnMedStatus[_name][_lotNumber][tx.origin][_retAddress][_quantity]), 
+                "Duplicate Request"
+            );
+                    
+            if(hasRole(Distributor, tx.origin)) {
+                require(
+                   _retAddress==owner,
+                    "Invalid Adddress"
+                );
 
-    //Create Return Request
-    function sendReturnRequest(string memory _name, uint256 _lotNumber, uint256 _quantity, address _retAddress) public  {
-        Medicine storage med = medicines[_name][_lotNumber];
-        require(
-            tx.origin != owner,
-            "Manufacturer Cannot Send Return Request"
-        );
-
-        require(
-            !(returnMedStatus[_name][_lotNumber][tx.origin][_retAddress][_quantity]), 
-            "Cannot Add multiple Return Requests at one time  to same Party, Wait till previous is accepted"
-        );
+                require(
+                    med.qty.distributorQuantity[tx.origin].medPurchased - med.qty.distributorQuantity[tx.origin].medSold  >= _quantity,
+                    "Invalid Quantity"
+                );
+                
+                returnMedStatus[_name][_lotNumber][tx.origin][owner][_quantity] = true;
+            }
             
-        if(hasRole(Distributor, tx.origin)) {
-            require(
-                _retAddress==owner,
-                "Return Adddress not Valid"
-            );
+            else if (hasRole(Pharmacy,tx.origin)) {
+                require(
+                    hasRole(Distributor, _retAddress) && med.qty.distributorQuantity[_retAddress].medPurchased > _quantity, 
+                   "Invalid Adddress"
+                );
+                    
+                uint256 totalQuantity = med.qty.PharmacyQuantity[tx.origin].medPurchased - med.qty.PharmacyQuantity[tx.origin].medSold;
+                    
+                require(
+                    totalQuantity >= _quantity,
+                    "Invalid Quantity"
+                );
 
-            require(
-                med.qty.distributorQuantity[tx.origin].medPurchased - med.qty.distributorQuantity[tx.origin].medSold  >= _quantity,
-                "Return Quantity Not Valid by Distributor"
-            );
-        
-            returnMedStatus[_name][_lotNumber][tx.origin][owner][_quantity] = true;
-        }
-        else if (hasRole(Pharmacy,tx.origin)) {
-            require(
-                hasRole(Distributor, _retAddress) && med.qty.distributorQuantity[_retAddress].medPurchased > _quantity, 
-                "Return Distributor Adddress not Valid / Distributor Didn't sold the selected Quantity"
-            );
-            
-            uint256 totalQuantity = med.qty.PharmacyQuantity[tx.origin].medPurchased - med.qty.PharmacyQuantity[tx.origin].medSold;
-            
-            require(
-                totalQuantity >= _quantity,
-                "Invalid Return Quantity by Pharmacy"
-            );
+                returnMedStatus[_name][_lotNumber][tx.origin][_retAddress][_quantity] = true;
+            }
 
-            returnMedStatus[_name][_lotNumber][tx.origin][_retAddress][_quantity] = true;
-        }
-        else {
+            else {
 
-            require(
-                hasRole(Pharmacy,_retAddress) && 
-                med.qty.PharmacyQuantity[_retAddress].medPurchased >= _quantity,
-                "Return Pharmacy Adddress not Valid / Pharmacy Didn't sold the selected Quantity"
-            );
-            
-            require(
+                require(
+                    hasRole(Pharmacy,_retAddress) && 
+                    med.qty.PharmacyQuantity[_retAddress].medPurchased >= _quantity,
+                    "Invalid Adddress"
+                );
+                   
+                require(
                 med.qty.consumerQuantity[tx.origin] >= _quantity,
-                "Invalid Return Quantity by Consumer"
-            );
-            
-            returnMedStatus[_name][_lotNumber][tx.origin][_retAddress][_quantity] = true;
+                "Invalid Quantity"
+                );
+                    
+                returnMedStatus[_name][_lotNumber][tx.origin][_retAddress][_quantity] = true;
+            }
+
+                
         }
     }
+    
+    /// Returns true if medicine is verified
+    /// @param _name, _lotNumber, _quantity, _pharmacy  of medicine to be verified
+    /// @dev Anyone can call this function to verify the medicine available in pharmacy
+
+    function verifyMedicine(
+        string memory _name,
+        uint256 _lotNumber,
+        address _pharmacy
+        ) public nonReentrant returns (bool) {
+        
+        unchecked {
+            Medicine storage med = medicines[_name][_lotNumber];
+            bool check = true;
+            string memory mesg = "Not Verified";
+            if (med.dateOfExpiry >= block.timestamp) {
+                mesg = "Expired";
+                check = false;
+            }
+            else if(medicines[_name][_lotNumber].cirSuply == false){
+                mesg = "Not in Circulation";//not purchased by distributor
+                check = false;
+            }
+            else if (med.cirSupply == 0) {
+                mesg = "No Longer in Circulation";//sold all to consumers
+                check = false;
+            }
+            else if (med.qty.PharmacyQuantity[_pharmacy].medPurchased - med.qty.PharmacyQuantity[_pharmacy].medSold == 0) {
+                mesg = "Not available";
+                check = false;
+            }
+            emit MedicineVerified(_lotNumber, mesg);
+            return check;
+        }
+    }
+
+    /// Returns quantity of medicine available to caller
+    /// @param _name, _lotNumber  of medicine
+    /// @dev Anyone can call this function to get the medicine count available in pocession
+
+    function getMedicineCount(
+        string memory _name, 
+        uint256 _lotNumber
+        ) public view returns (uint256 qty) {
+        
+        Medicine storage med = medicines[_name][_lotNumber];
+        
+        unchecked {
+            uint256 quantity;
+            if(tx.origin == owner) {
+                quantity = med.quantity - med.totalDistQty;
+                return quantity;
+            }
+            else if(hasRole(Distributor, tx.origin)) {
+                quantity = med.qty.distributorQuantity[tx.origin].medPurchased - med.qty.distributorQuantity[tx.origin].medSold;
+            return quantity;
+            }
+            else if (hasRole(Pharmacy,tx.origin)) {
+                quantity = med.qty.PharmacyQuantity[tx.origin].medPurchased - med.qty.PharmacyQuantity[tx.origin].medSold;
+                return quantity;
+            }
+            else {
+                return med.qty.consumerQuantity[tx.origin];
+            }
+        }
+    }
+
+    
 }
